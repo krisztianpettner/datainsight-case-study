@@ -1,0 +1,60 @@
+schema_info:
+  name: "GLOBAL_GENERIC_INVOICE"
+  display_name: "Global Generic Invoice"
+  country_code: null
+  document_type: "invoice"
+  version: 1
+
+detection:
+  keywords: ["Invoice", "Bill", "Total", "Amount Due", "Date"]
+  keyword_threshold: 2
+  base_confidence: 0.5
+  anchor_pattern: '(?:Invoice|Bill)\s*(?:No|Number|#)[:\s]*[A-Z0-9]+'
+  anchor_boost: 0.2
+  rejection_keywords: ["Delivery Note", "Packing Slip", "Guia de Remessa", "NÃO SERVE DE FATURA", "Guia de Transporte"]
+
+slots:
+  invoice_number:
+    patterns:
+      - '(?:Invoice|Bill)\s*(?:No|Number|#|Inv#)[:\s]*([A-Z0-9]{2,}[-/]?\d+)'
+    source: "tier2_regex"
+    confidence: 0.85
+
+  issue_date:
+    patterns:
+      - '(?:Date|Invoice Date|Bill Date|Issued)[:\s]*(\d{1,4}[-/\.]\d{1,2}[-/\.]\d{1,4})'
+    cleaner: "clean_date"
+    source: "tier2_regex"
+    confidence: 0.85
+
+  amount:
+    patterns:
+      - '(?:Total|Amount Due|Grand Total|Balance Due|Total Amount)[:\s]*([\d,\.]+)'
+    cleaner: "clean_amount"
+    source: "tier2_regex"
+    confidence: 0.80
+
+  vendor_name:
+    patterns:
+      - '(?:From|Seller|Vendor|Bill From|Company)[:\s]*([A-Z][\w\s,\.]+)'
+    source: "tier2_regex"
+    confidence: 0.70
+
+  customer_name:
+    patterns:
+      - '(?:To|Bill To|Customer|Client)[:\s]*([A-Z][\w\s,\.]+)'
+    source: "tier2_regex"
+    confidence: 0.70
+
+  line_items:
+    type: table
+    patterns: []
+    confidence: 0.7
+    table_meta:
+      columns: ["item_code", "description", "quantity", "unit", "unit_price", "line_total"]
+      header_rows: 1
+      spans_pages: true
+
+defaults:
+  currency: "USD"
+  country: "GLOBAL"

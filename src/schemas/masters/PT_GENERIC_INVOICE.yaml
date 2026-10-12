@@ -1,0 +1,296 @@
+schema_info:
+  name: "PT_GENERIC_INVOICE"
+  display_name: "Portuguese Generic Invoice"
+  country_code: "PT"
+  document_type: "invoice"
+  version: 3
+
+detection:
+  keywords: ["Factura", "Fatura", "NIF", "IVA", "Contribuinte", "ATCUD"]
+  keyword_threshold: 2
+  base_confidence: 0.7
+  anchor_pattern: 'ATC[UO]D?[:\s]+\s*[A-Z][A-Z0-9]+-\d+'
+  anchor_boost: 0.3
+  rejection_keywords: ["Guia de Remessa", "NÃO SERVE DE FATURA", "Delivery Note", "Guia de Transporte", "Consulta de Mesa", "Proforma", "Orçamento"]
+
+# PT AT QR field mapping (Portaria 195/2020).
+# Delta schemas inherit this map via deep_merge (parsing/schemas/registry.py).
+# Normalizers registered in parsing/qr_adapters/pt.py
+qr_field_map:
+  A:  { slot: tax_id,              normalizer: identity }
+  B:  { slot: customer_tax_id,     normalizer: identity }
+  C:  { slot: customer_country,    normalizer: identity }
+  D:  { slot: document_type,       normalizer: identity }
+  E:  { slot: document_status,     normalizer: identity }
+  F:  { slot: date,                normalizer: pt_date_yyyymmdd }
+  G:  { slot: invoice_number,      normalizer: identity }
+  H:  { slot: anchor,              normalizer: identity }
+  I1: { slot: fiscal_area,         normalizer: identity }
+  # Per-band base + IVA (Portaria 195/2020 — continental espaço fiscal).
+  # Feeds the accountant IVA panel directly (checksum-validated, reliable) via
+  # UnifiedInvoiceData.qr_iva_bands(). Açores (J*) / Madeira (K*) are NOT mapped
+  # yet → a multi-region invoice fails the band reconcile and falls back to
+  # line-item summation (no silent under-count). See S177 itinerary §9.
+  I2: { slot: amount_base_ise,     normalizer: pt_amount_decimal }
+  I3: { slot: amount_base_red,     normalizer: pt_amount_decimal }
+  I4: { slot: amount_iva_red,      normalizer: pt_amount_decimal }
+  I5: { slot: amount_base_int,     normalizer: pt_amount_decimal }
+  I6: { slot: amount_iva_int,      normalizer: pt_amount_decimal }
+  I7: { slot: amount_base_nor,     normalizer: pt_amount_decimal }
+  I8: { slot: amount_iva_nor,      normalizer: pt_amount_decimal }
+  N:  { slot: amount_tax,          normalizer: pt_amount_decimal }
+  O:  { slot: amount,              normalizer: pt_amount_decimal }
+  Q:  { slot: signature_hash,      normalizer: identity }
+  R:  { slot: software_cert_no,    normalizer: identity }
+
+slots:
+  seller_name:
+    patterns:
+      - '(?:Emitente|Vendedor|Empresa)[:\s]+([A-ZÀ-Ÿ][A-Za-zÀ-ÿ0-9\s\.,\-&]+(?:Lda|LDA|SA|Unipessoal))\b'
+      - '^(?:Original\s+)?([A-ZÀ-Ÿ][A-Za-zÀ-ÿ\s,.\-&]+(?:UNIPESSOAL|Unipessoal|LDA|Lda|SA))\b'
+    flags: "IGNORECASE|MULTILINE"
+    confidence: 0.75
+
+  seller_nif:
+    patterns:
+      - '(?:NIF|NIPC|N[I.]?F|M[I.]?F|Contribuinte)[s]?[:\s]+(?:PT)?(?<!\d)(\d{9})(?!\d)'
+      - '(?:PT)?(?<!\d)(\d{9})(?!\d)'
+    validator: "nif"
+    cleaner: "clean_tax_id"
+    flags: "IGNORECASE"
+    confidence: 0.95
+    region: "seller_block"
+
+  seller_address:
+    patterns:
+      - '(?:Morada|Sede|Endereço)[:\s]+([A-Za-zÀ-ÿ0-9\s\.,\-ºª]+\d{4}[- ]\d{3}\s+[A-Za-zÀ-ÿ\s,]+)'
+      - '((?:Rua|Av\.|Avenida|Travessa|Calçada|Praça|Largo|Estrada)\s+[^\n]+\n?\s*\d{4}[- ]\d{3}\s+[A-Za-zÀ-ÿ\s,]+)'
+    flags: "IGNORECASE|MULTILINE"
+    confidence: 0.7
+
+  seller_email:
+    patterns:
+      - '(?:E-?mail)[:\s]+(\S+\s*\d*@\S+\.\S+)'
+      - '(\S+\s*\d*@\S+\.\S+)'
+      - '(\S+@\S+\.\S+)'
+    cleaner: "clean_email"
+    flags: "IGNORECASE"
+    confidence: 0.8
+
+  buyer_name:
+    patterns:
+      - '(?:^|\n)(?:Cliente|Adquirente)\s*\n\s*([^\n]+)'
+      - '(?:Cliente|Adquirente|Comprador)[:\s]+([A-ZÀ-Ÿ][A-Za-zÀ-ÿ0-9\s\.,\-&]+(?:Lda|LDA|SA|Unipessoal)?)'
+    flags: "IGNORECASE|MULTILINE"
+    confidence: 0.75
+
+  buyer_nif:
+    patterns:
+      - '(?:NIF\s+(?:Adquirente|Cliente)|Cliente\s+NIF)[:\s]+(?:PT)?(?<!\d)(\d{9})(?!\d)'
+      - 'Cliente\b.*?(?:NIF|Contribuinte)[:\s]*(?:PT)?(?<!\d)(\d{9})(?!\d)'
+      - '(?:Contribuinte|NIF)\s+Cliente[^\d]*(?<!\d)(\d{9})(?!\d)'
+      - 'Morada\s+NIF\s*\n[^\n]*?(?<!\d)(\d{9})(?!\d)'
+      - 'NIF[:\s]+(?:PT)?(?<!\d)(\d{9})(?!\d)'
+      - '(?:PT)?(?<!\d)(\d{9})(?!\d)'
+    validator: "nif"
+    cleaner: "clean_tax_id"
+    flags: "IGNORECASE|DOTALL"
+    confidence: 0.9
+    region: "buyer_block"
+
+  buyer_address:
+    patterns:
+      - '(?:Morada\s+(?:do\s+)?(?:Adquirente|Cliente|destinat[áa]rio))[:\s]+([A-Za-zÀ-ÿ0-9\s\.,\-ºª]+\d{4}[- ]\d{3}[^\n]*)'
+      - 'Morada\s+NIF\s*\n\s*([^\n]+\n\s*\d{4}[- ]\d{3}\s+[A-Za-zÀ-ÿ\s,]+)'
+      - '([A-Za-zÀ-ÿ0-9\s\.,\-ºª]+\d{4}[- ]\d{3}\s+[A-Za-zÀ-ÿ\s,]+)'
+    flags: "IGNORECASE|MULTILINE"
+    confidence: 0.7
+
+  invoice_type:
+    patterns:
+      - '\b(Fatura(?:\s*-?\s*Recibo)?|Fatura\s+Simplificada|Factura(?:\s*-?\s*Recibo)?|Nota\s+de\s+Cr[ée]dito|Nota\s+de\s+D[ée]bito)\b'
+    flags: "IGNORECASE"
+    confidence: 0.9
+
+  invoice_number:
+    patterns:
+      - '\b((?:FT|FR|NC|FS|ND|GR|VD)\s+[\w]+\/\d+)\b'
+      - '(?:Fatura(?:[- ]?Recibo)?|Factura)\s*N[.\dº°]*\s+([A-Z]{2}\s+\S+\/\d+)'
+    flags: "IGNORECASE"
+    confidence: 0.85
+
+  atcud:
+    patterns:
+      - 'ATC[UO]D?[:\s]+\s*([A-Z][A-Z0-9]+-\d+)'
+    flags: "IGNORECASE"
+    confidence: 1.0
+    multi: true
+
+  issue_date:
+    patterns:
+      - '(?:Emissão|Data\s+de\s+Emiss[ãa]o)[:\s]*(\d{2}[\/\-]\d{2}[\/\-]\d{4})'
+      - '(?:Emissão|Data\s+de\s+Emiss[ãa]o)[:\s]*(\d{4}-\d{2}-\d{2})'
+      # Iter 12 (S146.5): no-QR utility layouts (Galp/Petrogal/MEO/EPAL).
+      # clean_date (Iter 10a) normalises PT-abbrev + YYYY.MM.DD to ISO.
+      - '\bData[:\s]+(\d{1,2}\s+(?:JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s+\d{4})\b'
+      - '\bData\s+de\s+emiss[ãa]o\s+(\d{4}\.\d{2}\.\d{2})\b'
+      - '\bemitida\s+em\s+(\d{4}\.\d{2}\.\d{2})\b'
+      - '\b(\d{4}-\d{2}-\d{2})\b'
+      - '\b(\d{2}[\/\-]\d{2}[\/\-]\d{4})\b'
+    cleaner: "clean_date"
+    flags: "IGNORECASE"
+    confidence: 0.85
+
+  due_date:
+    patterns:
+      - '(?:Data\s+de\s+)?Vencimento[:\s]+(\d{2}[\/\-]\d{2}[\/\-]\d{4})'
+      - '(?:Data\s+de\s+)?Vencimento[:\s]+(\d{4}-\d{2}-\d{2})'
+    cleaner: "clean_date"
+    flags: "IGNORECASE"
+    confidence: 0.8
+
+  currency:
+    patterns:
+      - '\b(EUR|€)\b'
+    confidence: 0.95
+
+  amount_net:
+    patterns:
+      # Iter 13 (S146.5): no-QR utility / fatura-recibo labels (specific first).
+      - 'VALOR\s+BASE[\s:]+([\d]+(?:[\.\s]\d{3})*[,\.]\d{2})\s*€?'
+      - 'Total\s+sem\s+IVA[\s:]+([\d]+(?:[\.\s]\d{3})*[,\.]\d{2})\s*€?'
+      - 'Total\s+(?:L[ií]quido|[Ll]iq\.?|Ui\.?)\s*[:\s]*([\d]+(?:[\.\s]\d{3})*[,\.]\d{2})\s*€?'
+      - '(?:Base\s+Tribut[áa]vel|Incid[êe]ncia)[:\s]*([\d]+(?:[\.\s]\d{3})*[,\.]\d{2})\s*€?'
+      # Iter 13b (S146.5): generic last-resort REMOVED — it was scooping the first
+      # decimal in the page (e.g. '0,15 €/kWh' or a date '2021.03') and feeding it
+      # to `total_net`. Better missing than wrong; Iter 14 derives net from
+      # gross−tax when possible.
+    cleaner: "clean_amount"
+    flags: "IGNORECASE"
+    confidence: 0.8
+
+  amount_tax:
+    patterns:
+      # Iter 14 (S146.5): Galp/Petrogal label-less totals row tail
+      # ` + 5,30 € = 40,98 €` (last `+ X,XX € =` is the IVA total).
+      - '\+\s+([\d]+[,\.]\d{2})\s*€\s*=\s*[\d]+(?:[\.\s]\d{3})*[,\.]\d{2}\s*€'
+      - 'Total\s+IVA\s*[:\s]*([\d]+(?:[.\s]\d{3})*[,\.]\d{2})'
+      - 'IVA\s+([\d]+(?:[.\s]\d{3})*[,\.]\d{2})\b'
+    cleaner: "clean_amount"
+    flags: "IGNORECASE"
+    confidence: 0.8
+
+  amount_gross:
+    patterns:
+      # Iter 13 (S146.5): no-QR utility / fatura-recibo labels (specific first).
+      - 'VALOR\s+A\s+(?:PAGAR|DEBITAR)[:\s]+([\d]+(?:[\.\s]\d{3})*[,\.]\d{2})\s*€?'
+      - 'Valor\s+a\s+Pagar\s+([\d]+(?:[\.\s]\d{3})*[,\.]\d{2})\s*€?'
+      - 'IMPORT[ÂA]NCIA\s+RECEBIDA[\s:]+([\d]+(?:[\.\s]\d{3})*[,\.]\d{2})\s*€?'
+      - 'TOTAL\s+DE\s+FATURA\*?[\s:]+([\d]+(?:[\.\s]\d{3})*[,\.]\d{2})\s*€?'
+      - 'Total[a]?\s*(?:a\s+)?(?:[Pp]agar|[Pp]ago)\s*[:\s]*([\d]+(?:[.\s]\d{3})*[,\.]\d{2})\s*€?'
+      - 'Total\s+(?:Geral|Bruto|do\s+Documento)\s*[:\s]*([\d]+(?:[.\s]\d{3})*[,\.]\d{2})\s*€?'
+      - '(?:^|\n)\s*Total\s+([\d]+(?:[\.\s]\d{3})*[,\.]\d{2})\s*€?'
+      # Iter 13b (S146.5): generic last-resort REMOVED — same reason as amount_net.
+    cleaner: "clean_amount"
+    flags: "IGNORECASE|MULTILINE"
+    confidence: 0.85
+
+  discount_total:
+    patterns:
+      - '(?:Descontos?\s+de\s+linha|Desc(?:\.\s*)?linha)\s*[:\s]*([\d]+(?:[.\s]\d{3})*[,\.]\d{2})\s*€?'
+      - '(?:Descontos?\s+(?:de\s+)?linha)\s*[:\s]*([\d]+(?:[,\.]\d{1,2}))\s*€?'
+    cleaner: "clean_amount"
+    flags: "IGNORECASE"
+    confidence: 0.8
+
+  tax_rates:
+    patterns:
+      - '(?:Taxa|IVA)\s*[:\s]*(\d{1,2}(?:[,\.]\d{1,2})?)\s*%'
+      - '(\d{1,2})\s*%'
+      - '\b(Isento|Isen[çc][ãa]o)\b'
+    flags: "IGNORECASE"
+    confidence: 0.75
+    multi: true
+
+  software_cert:
+    patterns:
+      - '(?:Processado\s+por\s+programa\s+)?[Cc]ertificado\s*(?:N[.º°]?\s*)?(\d{1,5}/AT)'
+    validator: "software_cert"
+    flags: "IGNORECASE"
+    confidence: 0.85
+
+  software_name:
+    patterns:
+      - '\d{1,5}/AT\s*[-–—]\s*([A-Za-zÀ-ÿ]\w+(?:[ ]\w+)?)'
+      - '[Cc]ertificado\s+n[º°.]?\s*\d+/AT\s*[-–—]\s*(\S+)'
+    flags: "IGNORECASE"
+    confidence: 0.8
+
+  hash_prefix:
+    patterns:
+      - '([A-Za-z0-9+/]{4})\s*-\s*Processado'
+      - '[A-Za-z0-9+/]{4}'
+    confidence: 0.9
+
+  iban:
+    patterns:
+      - '\b(PT[A-Z0-9]{2}\s*[\dA-Z]{4}\s*[\dA-Z]{4}\s*[\dA-Z]{4,}\s*[\dA-Z]{0,4}\s*[\dA-Z]{0,4})\b'
+      - '(?:IBAN)[:\s]*(PT[A-Z0-9]{2}[\s\dA-Z]+)'
+      - 'PT[A-Z0-9]{2}[\s\dA-Z]+'
+    cleaner: "clean_iban"
+    validator: "iban"
+    flags: "IGNORECASE"
+    confidence: 0.85
+
+  payment_method:
+    patterns:
+      - '(Pronto\s*Pag(?:amento|[a-z]*)|Multibanco|MB\s+WAY|[Tt]ransfer[êe]ncia(?:\s+[Bb]anc[áa]ria)?|Numerário|Dinheiro)'
+    flags: "IGNORECASE"
+    confidence: 0.75
+
+  total_pages:
+    patterns:
+      - '(?:P[áa]gina|Pag\.?)\s*\d+\s*(?:/|de)\s*(\d+)'
+      - '(?:Page)\s*\d+\s*(?:/|of)\s*(\d+)'
+    flags: "IGNORECASE"
+    confidence: 0.85
+
+  line_items:
+    type: table
+    patterns: []
+    confidence: 0.7
+    table_meta:
+      columns: ["item_code", "description", "quantity", "unit", "unit_price", "line_total"]
+      header_rows: 1
+      spans_pages: true
+
+    # F1.3 (S146.7) — Schema 1.1 line_items column structure (24-doksi §6.1).
+    # Lattice/Stream extractors (F2) use these labels to detect column headers
+    # in unknown-vendor layouts. Multi-language: PT first, EN fallback.
+    column_keywords:
+      description:  ["Descrição", "Designação", "Description", "Artigo", "Item"]
+      quantity:     ["Quantidade", "Qtd", "Qty", "Q.tdade", "Quant."]
+      unit:         ["Unidade", "Unid.", "Unit"]
+      unit_price:   ["Preço Unit.", "P. Unit.", "Preço/Un.", "Unit Price", "PVP Un."]
+      vat_rate:     ["Taxa IVA", "IVA", "Taxa", "VAT", "Tx"]
+      vat_amount:   ["Valor IVA", "IVA Unit.", "VAT Amount"]
+      gross_amount: ["Total c/IVA", "Preço c/IVA", "Total C/IVA", "Gross"]
+      discount:     ["Desconto", "Discount", "Rabatte"]
+      line_total:   ["Valor Total", "Total Linha", "Line Total", "Preço Total", "Total"]
+
+    # Per-column normalizers (ValidatorRegistry-resolved at row-build time, F1.5.x).
+    cleaners:
+      quantity:    "parse_decimal"
+      unit_price:  "parse_pt_money"
+      line_total:  "parse_pt_money"
+      vat_rate:    "parse_percentage"
+
+    # Row/aggregate-level Constitution constraints (F1.5.8 _line_math will impl).
+    validators:
+      - "horizontal_sum_check"     # qty × unit_price ≈ line_total
+      - "vertical_sum_check"       # Σ line_total ≈ amount_net
+      - "vat_rate_country_match"   # PT: {0, 0.06, 0.13, 0.23}
+
+defaults:
+  currency: "EUR"
+  country: "PT"

@@ -1,0 +1,178 @@
+schema_info:
+  name: "HU_GENERIC_INVOICE"
+  display_name: "Magyar Altalanos Szamla"
+  country_code: "HU"
+  document_type: "invoice"
+  version: 2
+
+detection:
+  keywords: ["Számla", "Bizonylat", "Fizetendő", "Végösszeg", "Adószám", "Ft", "HUF", "ÁFA"]
+  keyword_threshold: 2
+  base_confidence: 0.7
+  anchor_pattern: '\d{8}-\d-\d{2}'
+  anchor_boost: 0.2
+  rejection_keywords: ["Díjbekérő", "Sztornó", "Szállítólevél", "Előlegszámla", "Proforma"]
+
+slots:
+  seller_name:
+    patterns:
+      - '(?:Szállító|Eladó|Kibocsátó|Seller)[:\s/]*(?:[^\n]*(?:Vev[őõö]|Customer)[^\n]*)?\n\s*([A-ZÀ-Ÿ][\w\s\.,\-&/]+?(?:Kft\.?|Zrt\.?|Bt\.?|Nyrt\.?|KFT\.?|ZRT\.?|Ltd\.?|GmbH))\b'
+    flags: "MULTILINE"
+    confidence: 0.75
+
+  seller_tax_id:
+    patterns:
+      - '(?:Ad[oó]sz[áa]m|Tax\s+id\.?)[/.\s:]*(\d{8}-\d-\d{2})'
+      - '\b(HU\s?\d{8})\b'
+    validator: "hu_tax_id"
+    cleaner: "clean_tax_id"
+    flags: "IGNORECASE"
+    confidence: 0.9
+
+  seller_address:
+    patterns:
+      - '(?:Szállító|Eladó|Kibocsátó|Seller)\b[\s\S]{0,200}?(\d{4}\s*[-–]?\s*[A-ZÀ-ÿ][a-zà-ÿ]+(?:[\s\-][A-Za-zà-ÿ]+)*[,.]?\s+[^\n]{3,60})'
+    flags: "IGNORECASE|DOTALL"
+    confidence: 0.6
+
+  seller_email:
+    patterns:
+      - '\b([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})\b'
+    confidence: 0.8
+
+  buyer_name:
+    patterns:
+      - '(?:Vev[őõö]|Customer|Címzett)[:\s/]*\n\s*([A-ZÀ-Ÿ][\w\s\.,\-&/áéíóöőúüűÁÉÍÓÖŐÚÜŰ]+?(?:Kft\.?|Zrt\.?|Bt\.?|Nyrt\.?|KFT\.?|Ltd\.?|GmbH))\b'
+      - '(?:Vev[őõö]|Customer|Címzett)[:\s/]*\n\s*([^\n]{5,60})'
+    flags: "MULTILINE"
+    confidence: 0.7
+
+  buyer_tax_id:
+    patterns:
+      - '(?:Vev[őõö]|Customer|Címzett)\b[\s\S]{0,400}?Ad[oó]sz[áa]m[:\s]*(\d{8}-\d-\d{2})'
+      - '(?:Vev[őõö]|Customer|Címzett)\b[\s\S]{0,400}?(HU\s?\d{8})\b'
+    validator: "hu_tax_id"
+    flags: "IGNORECASE|DOTALL"
+    confidence: 0.85
+
+  invoice_number:
+    patterns:
+      - '(?:Sorsz[áa]m|Sz[áa]mlasz[áa]m|Sz[áa]mlasorsz[áa]m|Bizonylat\s+sorsz[áa]ma|Sz[áa]mla\s+sorsz[áa]m(?:a)?|Invoice\s+No\.?)[/:\s]*([A-Za-zÁÉÍÓÖŐÚÜŰáéíóöőúüű0-9\-\/]+)'
+    flags: "IGNORECASE"
+    confidence: 0.9
+
+  issue_date:
+    patterns:
+      - '(?:Kelt[e:]?|Sz[áa]mla\s+kelte|Bizonylat\s+kelte|Ki[áa]ll[ií]t[áa]s\s+id[őõ]pontja|Sz[áa]mla\s+d[áa]tuma|Invoice\s+Date)[/:\s]*(\d{4}[\.\s]+\d{1,2}[\.\s]+\d{1,2}\.?)'
+      - '(?:Teljes[ií]t[ée]s|Delivery\s+Date).*?(?:Kelt|Invoice\s+Date)[^\n]*\n.*?\d{4}[\.\s]*\d{1,2}[\.\s]*\d{1,2}\.?\s+(\d{4}[\.\s]*\d{1,2}[\.\s]*\d{1,2}\.?)'
+    cleaner: "clean_date"
+    flags: "IGNORECASE"
+    confidence: 0.85
+
+  date_performance:
+    patterns:
+      - '(?:Teljes[ií]t[ée]s(?:\s+(?:id[őõ]pontja|d[áa]tuma|kelte))?|Telj\.?\s*kelte|Delivery\s+Date)[/:\s]*(\d{4}[\.\s]+\d{1,2}[\.\s]+\d{1,2}\.?)'
+      - '(?:Teljes[ií]t[ée]s|Delivery\s+Date).*?(?:Kelt|Invoice\s+Date)[^\n]*\n.*?(\d{4}[\.\s]*\d{1,2}[\.\s]*\d{1,2}\.?)'
+    cleaner: "clean_date"
+    flags: "IGNORECASE"
+    confidence: 0.8
+
+  date_due:
+    patterns:
+      - '(?:Fizet[ée]si\s+hat[áa]rid[eőõ]|Esed[ée]kes|Fiz\.?\s*hat[áa]rid[eőõ]|Payment\s+Due)[/:\s]*(\d{4}[\.\s]+\d{1,2}[\.\s]+\d{1,2}\.?)'
+      - '(?:Esed[ée]kes|hat[áa]rid[eőõ]|Payment\s+Due).*\n(?:.*?\d{4}[\.\s]*\d{1,2}[\.\s]*\d{1,2}\.?){2}.*?(\d{4}[\.\s]*\d{1,2}[\.\s]*\d{1,2}\.?)'
+    cleaner: "clean_date"
+    flags: "IGNORECASE"
+    confidence: 0.8
+
+  payment_method:
+    patterns:
+      - '(?:Fizet[ée]s(?:i)?\s+m[óo]d(?:ja)?|Fiz\.?\s*m[óo]d|Payment\s+Mode)[/:\s]+(K[ée]szp[ée]nz|[ÁáAa]tutal[áa]s(?:os)?(?:\s*\(\d+(?:\s*nap)?\))?|Banki\s+[áa]tutal[áa]s|Ut[áa]nv[ée]t|Kompenz[áa]ci[óo])'
+      - '(?:Fizet[ée]s(?:i)?\s+m[óo]d(?:ja)?|Payment\s+Mode)[^\n]*\n[^\n]*?(K[ée]szp[ée]nz|[ÁáAa]tutal[áa]s(?:os)?(?:\s*\(\d+(?:\s*nap)?\))?|Banki\s+[áa]tutal[áa]s|Ut[áa]nv[ée]t)'
+      - '\b(K[ée]szp[ée]nz|Banki\s+[áa]tutal[áa]s)\b'
+    flags: "IGNORECASE"
+    confidence: 0.75
+
+  currency:
+    patterns:
+      - 'P[ée]nznem[:\s]*(HUF|EUR|USD)'
+      - '\b(EUR|USD)\b'
+      - '\b(HUF|Ft)\b'
+    flags: "IGNORECASE"
+    confidence: 0.85
+
+  amount_net:
+    patterns:
+      - 'Nett[oó]\s+[eé]rt[eé]k\s+[oö]sszesen[:\s]*([\d]+(?:[\s\.,]\d{3})*(?:[,\.]\d{1,2})?)\s*(?:Ft|HUF|EUR)?'
+      - 'Nett[oó]\s+[oö]sszesen[:\s]*([\d]+(?:[\s\.,]\d{3})*(?:[,\.]\d{1,2})?)\s*(?:Ft|HUF|EUR)?'
+      - '\d{1,2}\s*%\s*(?:\(?[áa]fa\)?\s+)?([\d]+(?:[\s\.,]\d{3})*(?:[,\.]\d{1,2})?)\s*(?:Ft)?'
+      - '\d{1,2}\s*%-?(?:os)?\s+[áa]fa\s+([\d]+(?:[\s\.,]\d{3})*(?:[,\.]\d{1,2})?)\s*(?:Ft)?'
+      - '([\d]+(?:[\.\s,]\d{3})*[,\.]\d{1,2})\s*(?:Ft|HUF|EUR|€)?'
+    cleaner: "clean_amount"
+    flags: "IGNORECASE"
+    confidence: 0.85
+
+  amount_tax:
+    patterns:
+      - '[ÁáAa]th[áa]r[ií]tott\s+[ÁáAa]FA\s+[oö]sszesen[:\s]*([\d]+(?:[\s\.,]\d{3})*(?:[,\.]\d{1,2})?)\s*(?:Ft|HUF|EUR)?'
+      - '[ÁáAa]FA\s+[oö]sszesen[:\s]*([\d]+(?:[\s\.,]\d{3})*(?:[,\.]\d{1,2})?)\s*(?:Ft|HUF|EUR)?'
+      - '\d{1,2}\s*%\s*\(?[áa]fa\)?\s+[\d]+(?:[\s\.,]\d{3})*(?:[,\.]\d{1,2})?\s+(?:Ft\s+)?([\d]+(?:[\s\.,]\d{3})*(?:[,\.]\d{1,2})?)\s*(?:Ft)?'
+      - '\d{1,2}\s*%-?(?:os)?\s+[áa]fa\s+[\d]+(?:[\s\.,]\d{3})*(?:[,\.]\d{1,2})?\s+(?:Ft\s+)?([\d]+(?:[\s\.,]\d{3})*(?:[,\.]\d{1,2})?)\s*(?:Ft)?'
+      - 'VAT\s+(?:Price|amount)?[/:\s]*([\d]+(?:[\s\.,]\d{3})*(?:[,\.]\d{1,2})?)\s*(?:Ft|HUF|EUR)?'
+      - '([\d]+(?:[\.\s,]\d{3})*[,\.]\d{1,2})\s*(?:Ft|HUF|EUR|€)?'
+    cleaner: "clean_amount"
+    flags: "IGNORECASE"
+    confidence: 0.85
+
+  amount_gross:
+    patterns:
+      - 'Fizet(?:end[oőõ]|endő)\s*(?:v[eé]g[oö]sszeg)?[:\s]*([\d]+(?:[\s\.,]\d{3})*(?:[,\.]\d{1,2})?)\s*(?:Ft|HUF|EUR)?'
+      - 'Brutt[oó]\s*(?:[oö]sszesen|v[eé]g[oö]sszeg)?[:\s]*([\d]+(?:[\s\.,]\d{3})*(?:[,\.]\d{1,2})?)\s*(?:Ft|HUF|EUR)?'
+      - 'V[eé]g[oö]sszeg[:\s]*([\d]+(?:[\s\.,]\d{3})*(?:[,\.]\d{1,2})?)\s*(?:Ft|HUF|EUR)?'
+      - 'Total[/]?[ÖöOo]sszesen[:\s]*([\d]+(?:[\s\.,]\d{3})*(?:[,\.]\d{1,2})?)\s*(?:Ft|HUF|EUR)?'
+      - '([\d]+(?:[\.\s,]\d{3})*[,\.]\d{1,2})\s*(?:Ft|HUF|EUR|€)?'
+    cleaner: "clean_amount"
+    flags: "IGNORECASE"
+    confidence: 0.90
+
+  tax_rates:
+    patterns:
+      - '(\d{1,2})\s*%'
+      - '\b(TAM|AAM|ad[oó]mentes|TAGALLAMI\s+MENTES|[Áá]FA\s*mentes)\b'
+    flags: "IGNORECASE"
+    confidence: 0.75
+
+  iban:
+    patterns:
+      - '\b(HU\d{2}\s*\d{4}\s*\d{4}\s*\d{4}\s*\d{4}\s*\d{4}\s*\d{4})\b'
+      - '(?:IBAN)[:\s]*(HU\d{2}[\s\d]+)'
+    flags: "IGNORECASE"
+    confidence: 0.85
+
+  seller_bankaccount:
+    patterns:
+      - '(?:Banksz[áa]mla(?:sz[áa]m)?|bankszámla)[:\s]*(\d{8}-\d{8}-\d{8})'
+      - '\b(\d{8}-\d{8}-\d{8})\b'
+      - '(?:Banksz[áa]mla(?:sz[áa]m)?)[:\s]*(\d{16,26})\b'
+    flags: "IGNORECASE"
+    confidence: 0.8
+
+  software_name:
+    patterns:
+      - '\b(Clear\s*Admin|Hexagon|ACTUAL|T[áa]rhely\.?Eu|Okos[- ][ÜüU]gyvitel|NetSoft|Billingo|Sz[áa]ml[áa]zz\.hu|NAV\s+Online|eSz[áa]mla)\b'
+      - '(\S+(?:\s+\S+)?)\s+(?:rendszer[ée]vel|sz[áa]ml[áa]z[óo](?:\s+\d))'
+    flags: "IGNORECASE"
+    confidence: 0.8
+
+  line_items:
+    type: table
+    patterns: []
+    confidence: 0.7
+    table_meta:
+      columns: ["item_code", "description", "quantity", "unit", "unit_price", "line_total"]
+      header_rows: 1
+      spans_pages: true
+
+defaults:
+  currency: "HUF"
+  country: "HU"
