@@ -10,20 +10,20 @@ behind a change. The production domain and storage vendor are replaced with plac
 
 | chapter | read |
 |---|---|
-| [Parsing engine](../docs/en/02-parsing-engine.md) — ingress check | `ingress/` |
+| [Parsing engine](../docs/en/04-parsing-engine.md) — ingress check | `ingress/` |
 | — QR oracle | `pdf_parser/qr_barcode_engine_v2.py` |
 | — schemas as data | `schemas/masters/`, `parsing/schemas/` |
 | — the pipeline and the line-item ladder | `parsing/heuristic_engine.py`, `parsing/profiles/base.py` |
 | — local LLM with circuit breaker | `parsing/llm/local_client.py` |
 | — validation rules | `orchestration/constitution.py` |
-| — **the identity gate** (QR vs visual, bands, document confidence) | `parsing/identity/` |
+| [Trust](../docs/en/05-trust.md) — **the identity gate** (QR vs visual, bands, document confidence) | `parsing/identity/` |
 | — the review desk's commit gate | `services/desk_gate.py` |
-| [Data path](../docs/en/03-data-path.md) — upload relay to the NAS | `vps/sync/nas_sftp.py` |
+| [Data path](../docs/en/06-data-path.md) — upload relay to the NAS | `vps/sync/nas_sftp.py` |
 | — hand-over and status push on the PC | `dispatch_watcher.py` |
+| [Security](../docs/en/07-security-and-isolation.md) — one scope resolver | `services/authz/` |
 | — hash-chained event log | `services/batch_events_service.py` |
 | — pseudonymisation engine | `services/pseudonymization_engine.py` |
-| [Platform](../docs/en/04b-platform.md) — one scope resolver | `services/authz/` |
-| [Billing](../docs/en/04c-billing.md) — append-only ledger (DB trigger) | `alembic/versions/20260502_000001_billing_ledger.py`, `services/billing_ledger_service.py` |
+| [Billing](../docs/en/10-billing.md) — append-only ledger (DB trigger) | `alembic/versions/20260502_000001_billing_ledger.py`, `services/billing_ledger_service.py` |
 | — graduated pricing | `services/billing_pricing.py` |
 | — reverse-charge gate | `services/tax_treatment.py` |
 
